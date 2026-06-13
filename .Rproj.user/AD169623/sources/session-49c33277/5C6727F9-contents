@@ -1,0 +1,373 @@
+---
+title: "Out of Reach: Quantifying Housing Affordability across Dutch Provinces (2013-2025)"
+author: "Tutorial 5 group 8 - Noureddine El Kaouakib (2863711), Imad el Fakiri (2863975), Achraf Saih (2865196)"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.width = 7, fig.height = 4.0, fig.align = "center")
+library(tidyverse)
+```
+
+```{r load-data, include=FALSE}
+# Build the panel by running the cleaning + merge pipeline. The full, commented
+# code is shown in Section 3.1 (Data cleaning); we run it here so the figures
+# below have the data available.
+source("R/01_clean_merge.R")
+```
+
+
+# Identification of the social problem
+
+## Describe the social problem
+
+Home ownership in the Netherlands has moved out of reach for a growing share of
+households. The scale of the problem is stark: the CPB's first Housing Market
+Accessibility Monitor found that the share of homes an average-income household
+could afford fell from 61% a decade ago to just 21% in 2024, and that such a
+household now falls roughly EUR 100,000 short of the mortgage needed for an
+average home (CPB, 2026). House prices rose far faster than incomes over this
+period, so the number of years of income required to buy an average home climbed
+steeply. This matters for wealth inequality (owners gain, would-be buyers are
+locked out), for household debt -- the Netherlands has among the highest
+mortgage debt in Europe (DNB, 2024) -- and for regional divergence: if
+affordability worsens unevenly, it shapes where people can afford to live and work.
+
+Existing analyses (CPB, 2026; DNB, 2024) establish the national trend but focus
+on the country as a whole or on the major cities. The gap we address is the
+**provincial** picture: whether affordability deteriorated evenly across the
+twelve provinces or concentrated in particular regions, and how it responded to
+the 2022 interest-rate shock. We quantify affordability as a **price-to-income
+ratio** per province (average purchase price divided by median household income)
+and track it from 2013 to 2024, using the rapid ECB rate rises of 2022 as a
+natural event.
+
+# Data sourcing
+
+## Description and limitations
+
+We merge **two distinct public CBS datasets**, joined on province x year:
+
+| Dataset | Unit | Key variable used | Source / period |
+|---|---|---|---|
+| Existing own homes; average purchase prices | province x year | `avg_price` (EUR) | CBS / Kadaster, 2013-2025 |
+| Income of persons; characteristics, region | province x year | median standardised household income (EUR) | CBS, 2013-2024 |
+
+**Limitations (state honestly - rubric rewards this):**
+
+- The two series do not fully overlap: prices run to **2025**, income only to
+  **2024**, and the 2024 income figure is **provisional** (CBS flags it `*`).
+  The affordability ratio is therefore computed only for **2013-2024**; the 2025
+  price is shown for context but has no matching income.
+- "Average purchase price" is a mean and is sensitive to the mix of homes sold;
+  median income is corrected for household size (standardised) but the two are
+  not measured on the same statistical unit (transactions vs persons).
+- Province-level averages hide large within-province variation (e.g. Amsterdam
+  vs rural Noord-Holland).
+
+## Loading the data
+
+```{r glimpse}
+glimpse(panel)
+```
+
+# Quantifying
+
+## Data cleaning
+
+Cleaning steps (full code in `R/01_clean_merge.R`), each with a rationale:
+
+1. **Prices, wide -> long.** The CBS price file stores years as 13 columns; we
+   pivot to one row per province x year so it can be joined to income.
+2. **Income, 13 files -> one table.** Each income file is a single year with the
+   year on its "Perioden" line; we read all of them, extract the year, and stack.
+3. **Drop the duplicate 2018 file.** Two supplied income files are identical
+   2018 exports; keying on province x year and `distinct()` collapses them.
+4. **Keep the 12 provinces only.** Income files also list four cities
+   (Amsterdam, Rotterdam, Den Haag, Utrecht gemeente); we filter to `(PV)` rows.
+5. **Fix Dutch number formats.** Income uses a decimal comma and is in
+   thousands of euros, so we replace "," with "." and multiply by 1000.
+6. **Inner join** keeps only years present in both -> a complete 12 x 12 panel.
+
+The full script is in `R/01_clean_merge.R` and in the repo. The two steps 
+that need the most care are the wide-to-long pivot of the price file and 
+the Dutch deciaml-comma fix in the income files; both are shown below. 
+
+```{r cleaning-code, eval=FALSE, echo=TRUE}
+# Prices: wide (one column per year) -> long (one row per province-year)
+prices <- price_raw %>% 
+  rename(region = X1) %>%
+  filter(str_detect(region, "\\(PV\\)$\\")) %>% # provinces only
+  set_names(c("region", as.character(2013:2015))) %>%
+  pivot_longer(-region, names_to = "year", values_to = "avg_price")
+
+# Income: read every column as text so the Dutch decimal comma in "23,9" is not 
+# misread as 239, then comma -> point, to number, x1000 (values are in 1000s euros)
+med_income <- as.numeric(str_repalce(med_std_income_k, ", ", "."))*1000
+
+# Merge on province + year (inner join -> the 2013-2014 overlap) and build the 
+# two analysis variables; distinct() collapses the duplicate 2018 income file. 
+panel <- prices %>% 
+  inner_join(income, by = c("province", "year")) %>%
+  group_by(province) %>%
+  mutate(price_income_ratio = avg_price/med_income,
+         ratio_index = 100* price_income_ratio/price_income_ratio[year ==  2013]) %>%
+  ungroup()
+```
+
+
+## Describing the variables
+
+```{r var-table}
+tibble::tribble(
+  ~Variable,             ~Type,      ~Meaning,
+  "province",            "character","Dutch province",
+  "year",                "integer",  "calendar year",
+  "avg_price",           "numeric",  "average purchase price of existing homes (EUR)",
+  "med_income",          "numeric",  "median standardised household income (EUR)",
+  "price_income_ratio",  "numeric",  "avg_price / med_income (years of income to buy)",
+  "ratio_index",         "numeric",  "ratio relative to province's 2013 level (=100)"
+) %>% knitr::kable(caption = "Variables in the merged panel.")
+```
+
+## Creating new variables
+
+Two constructed variables (rubric: >= 2 variables with analytical value):
+
+- **`price_income_ratio`** = average price / median income. Interprets directly
+  as the number of years of median income needed to buy an average home - the
+  standard affordability measure.
+- **`ratio_index`** = each province's ratio relative to its own 2013 value
+  (=100). Lets us compare the *speed of deterioration* across provinces on a
+  common scale, independent of their starting level.
+
+```{r summary-by-period}
+panel %>%
+  mutate(period = case_when(year <= 2015 ~ "2013-2015",
+                            year <= 2021 ~ "2016-2021",
+                            TRUE         ~ "2022-2024")) %>%
+  group_by(period) %>%
+  summarise(mean_ratio = mean(price_income_ratio),
+            min_ratio  = min(price_income_ratio),
+            max_ratio  = max(price_income_ratio)) %>%
+  knitr::kable(digits = 2, caption = "Price-to-income ratio by period.")
+```
+
+The `ratio_index` variable (2013 = 100 for every province) makes the *speed* of
+deterioration directly comparable across provinces, regardless of their starting
+affordability level:
+
+```{r ratio-index-plot}
+panel %>%
+  ggplot(aes(year, ratio_index, group = province)) +
+  geom_line(colour = "grey75") +
+  geom_line(data = ~filter(.x, province %in%
+              c("Flevoland", "Noord-Holland", "Groningen")),
+            aes(colour = province), linewidth = 1) +
+  geom_hline(yintercept = 100, linetype = "dotted") +
+  scale_x_continuous(breaks = seq(2013, 2024, 2)) +
+  labs(title = "How fast affordability worsened (2013 = 100)",
+       subtitle = "Higher = affordability deteriorated more since 2013",
+       x = "Year", y = "Affordability index (2013 = 100)", colour = NULL) +
+  theme_minimal()
+```
+
+Indexing each province to its own 2013 level reveals a pattern the absolute
+ratios hide: the *fastest* deterioration did not occur in the most expensive
+province. Flevoland's affordability index reached 144 by 2024 (a 44% worsening
+since 2013) -- the steepest of all twelve -- ahead of Noord-Holland (139) and
+Utrecht (131). So while the Randstad has the worst absolute affordability,
+several cheaper provinces are catching up fast in relative terms; Zeeland, at
+120, deteriorated least.
+
+## Temporal variation
+
+```{r temporal}
+panel %>%
+  group_by(year) %>%
+  summarise(mean_ratio = mean(price_income_ratio)) %>%
+  ggplot(aes(year, mean_ratio)) +
+  geom_line(linewidth = 1, colour = "#2c6fbb") +
+  geom_point(size = 2, colour = "#2c6fbb") +
+  scale_x_continuous(breaks = 2013:2024) +
+  labs(title = "Average price-to-income ratio, all provinces (2013-2024)",
+       x = "Year", y = "Years of income to buy an average home") +
+  theme_minimal()
+```
+
+The national average ratio was essentially flat at about 8.2 years of income in
+2013-2014, then climbed steadily for eight years to a peak of 11.6 in 2022 --
+meaning an average home went from costing roughly eight years of median income to
+nearly twelve. After the 2022 interest-rate shock the ratio fell to 10.5 in 2023
+and stayed near that level (10.6) in 2024. Affordability therefore eased
+slightly after 2022 but remained far worse than at any point before 2020;
+the dip is a partial pause, not a recovery.
+
+## Sub-population variation
+
+Here the "sub-populations" are the provinces (grouped/facetted comparison).
+
+```{r subpop}
+panel %>%
+  ggplot(aes(year, price_income_ratio, group = province)) +
+  geom_line(colour = "grey75") +
+  geom_line(data = ~filter(.x, province %in%
+              c("Noord-Holland","Utrecht","Groningen","Limburg")),
+            aes(colour = province), linewidth = 1) +
+  scale_x_continuous(breaks = seq(2013, 2024, 2)) +
+  labs(title = "Affordability diverges across provinces",
+       subtitle = "Four provinces highlighted; grey = the other eight",
+       x = "Year", y = "Price-to-income ratio", colour = NULL) +
+  theme_minimal()
+```
+
+The provinces fan out over time rather than moving together. In 2013 the ratio
+ranged narrowly (roughly 7-10 years); by 2024 the spread had widened markedly,
+from Zeeland at 8.9 years to Noord-Holland at 13.4 -- a gap of about 4.5 years of
+income between the most and least affordable province. Noord-Holland and Utrecht
+(the two highlighted Randstad provinces) pull away from the pack throughout,
+while Groningen and the northern provinces stay at the bottom. The widening gap
+means affordability is not just worsening nationally but becoming more regionally
+unequal.
+
+## Spatial variation
+
+We map the 2024 ratio onto real province boundaries (CBS/PDOK, read with the
+`sf` package) - a choropleth rather than a placeholder chart.
+
+```{r spatial-map, fig.height=5.5}
+library(sf)
+
+# Province boundaries (CBS/PDOK via cartomap); cached locally after first download
+geo_path <- "data/raw/provincie_2023.geojson"
+if (!file.exists(geo_path)) {
+  download.file("https://cartomap.github.io/nl/wgs84/provincie_2023.geojson",
+                geo_path, mode = "wb")
+}
+
+provinces_sf <- st_read(geo_path, quiet = TRUE) %>%
+  mutate(province = str_replace(statnaam, "Frysl\u00e2n", "Fryslan"))
+
+map_data <- provinces_sf %>%
+  left_join(filter(panel, year == 2024), by = "province")
+
+ggplot(map_data) +
+  geom_sf(aes(fill = price_income_ratio), colour = "white", linewidth = 0.3) +
+  scale_fill_viridis_c(option = "magma", direction = -1, name = "Years of\nincome") +
+  labs(title = "Housing affordability by province, 2024",
+       subtitle = "Average home price expressed in years of median household income",
+       caption = "Data: CBS. Boundaries: CBS/PDOK via cartomap.") +
+  theme_void() +
+  theme(plot.title = element_text(face = "bold"),
+        plot.subtitle = element_text(size = 9, colour = "grey30"))
+```
+
+The map confirms a clear urban-core versus periphery pattern. The Randstad
+provinces -- Noord-Holland (13.4), Utrecht (12.3) and Zuid-Holland (11.2) --
+form a high-ratio cluster, with Noord-Brabant and Gelderland close behind. The
+most affordable provinces sit at the edges of the country: Zeeland (8.9),
+Fryslan (9.4), Limburg (9.4) and Groningen (9.5). This mirrors the CPB's finding
+that accessibility problems are greatest in and around the major cities (CPB,
+2026), and points to housing demand concentrated near economic centres as the
+spatial driver. A caveat: province-level means mask large within-province
+differences -- Amsterdam is far less affordable than rural Noord-Holland.
+
+## Event analysis
+
+```{r event}
+panel %>%
+  group_by(year) %>%
+  summarise(mean_ratio = mean(price_income_ratio)) %>%
+  ggplot(aes(year, mean_ratio)) +
+  geom_vline(xintercept = 2022, linetype = "dashed") +
+  annotate("text", x = 2022, y = Inf, label = " ECB rate shock (2022)",
+           hjust = 0, vjust = 2, size = 3) +
+  geom_line(linewidth = 1, colour = "#b5341f") +
+  geom_point(size = 2, colour = "#b5341f") +
+  scale_x_continuous(breaks = 2013:2024) +
+  labs(title = "Affordability around the 2022 interest-rate shock",
+       x = "Year", y = "Mean price-to-income ratio") +
+  theme_minimal()
+```
+
+The ECB began raising rates sharply in 2022, and the dashed line marks that
+event. The ratio peaks exactly at 2022 (11.6) and falls for the first time in the
+series in 2023 (10.5) -- consistent with higher mortgage rates cutting borrowing
+capacity and pushing prices down. **Causal caveat:** this is an association, not
+proof. The post-2022 easing reflects several forces at once. DNB notes that the
+price fall ended in summer 2023 once rates stopped climbing and incomes began
+rising, with prices recovering thereafter (DNB, 2024); rising incomes also lift
+our denominator independently of the rate shock. So the rate rise is one
+plausible driver of the turning point, but separating it from income growth and
+the structural housing shortage would require a more formal design.
+
+# Discussion
+
+Our analysis quantifies how housing affordability in the Netherlands worsened
+between 2013 and 2024 and how it varies across provinces. Three findings stand
+out. First, affordability deteriorated sharply and nationally: the average home
+went from costing about 8.2 years of median household income in 2013 to a peak of
+11.6 years in 2022. Second, the burden is regionally unequal and the gap is
+widening -- by 2024 the ratio ranged from 8.9 in Zeeland to 13.4 in
+Noord-Holland, with a clear Randstad-versus-periphery divide. Third, the index
+analysis shows the fastest *relative* decline occurred in Flevoland rather than
+the most expensive province, so cheaper regions are not insulated. These results
+align with and add regional detail to the CPB's national finding that average
+earners can increasingly no longer afford to buy (CPB, 2026).
+
+Around the 2022 interest-rate shock the ratio turned down for the first time, but
+we are careful not to over-claim: incomes rising, prices falling, and the
+structural housing shortage all coincide, and DNB documents that prices resumed
+rising from late 2023 (DNB, 2024). We read the 2022 turning point as an
+association consistent with the rate shock, not as a causal estimate.
+
+Limitations temper these conclusions. We use average purchase prices against
+median standardised income, two different statistical units, so the ratio is an
+indicator rather than a literal "years to buy" for a typical buyer. Province-level
+means hide large within-province variation (notably the big cities). Income data
+end in 2024 (provisional) while prices run to 2025, so the ratio cannot cover the
+most recent year. Future work could use a real choropleth at municipal level and
+a proper difference-in-differences or interrupted-time-series design to test the
+rate-shock effect more rigorously.
+
+# Reproducibility
+
+## GitHub repository link
+
+`https://github.com/noureddineek/Housing_affordability`
+
+## How this is reproduced
+
+```
+housing_project/
+  README.md                     # what the project is + how to run it
+  run_all.R                     # reproduces everything end to end
+  housing_affordability.Rmd     # this report
+  R/01_clean_merge.R            # cleaning + merge -> data/panel.csv
+  R/02_make_map.R               # downloads boundaries + builds the choropleth
+  data/raw/                     # the unmodified CBS downloads + province GeoJSON
+  data/panel.csv                # generated
+  output/                       # knitted pdf + map png
+```
+
+# References
+
+The data and sources used in this report:
+
+- Centraal Bureau voor de Statistiek (CBS). (n.d.). *Bestaande koopwoningen;
+  gemiddelde verkoopprijzen, regio* [Existing own homes; average purchase prices,
+  region] [Data set]. CBS StatLine. https://opendata.cbs.nl/
+- Centraal Bureau voor de Statistiek (CBS). (n.d.). *Inkomen van personen;
+  persoonskenmerken, regio (indeling 2025)* [Income of persons; characteristics,
+  region] [Data set]. CBS StatLine. https://opendata.cbs.nl/
+- Centraal Planbureau (CPB). (2026). *Monitor toegankelijkheid woningmarkt*
+  [Housing Market Accessibility Monitor]. CPB Netherlands Bureau for Economic
+  Policy Analysis. https://www.cpb.nl/
+- De Nederlandsche Bank (DNB). (2024). *Housing market.* https://www.dnb.nl/en/current-economic-issues/housing-market/
+- Cartomap. (2023). *provincie_2023* [Province boundary GeoJSON, CBS/PDOK source].
+  https://cartomap.github.io/nl/
