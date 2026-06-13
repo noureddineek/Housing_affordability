@@ -96,21 +96,21 @@ Cleaning steps (full code in `R/01_clean_merge.R`), each with a rationale:
 
 The full script is in `R/01_clean_merge.R` and in the repo. The two steps 
 that need the most care are the wide-to-long pivot of the price file and 
-the Dutch deciaml-comma fix in the income files; both are shown below. 
+the Dutch decimal-comma fix in the income files; both are shown below. 
 
 ```{r cleaning-code, eval=FALSE, echo=TRUE}
 # Prices: wide (one column per year) -> long (one row per province-year)
 prices <- price_raw %>% 
   rename(region = X1) %>%
-  filter(str_detect(region, "\\(PV\\)$\\")) %>% # provinces only
-  set_names(c("region", as.character(2013:2015))) %>%
+  filter(str_detect(region, "\\(PV\\)$")) %>% # provinces only
+  set_names(c("region", as.character(2013:2025))) %>%
   pivot_longer(-region, names_to = "year", values_to = "avg_price")
 
 # Income: read every column as text so the Dutch decimal comma in "23,9" is not 
 # misread as 239, then comma -> point, to number, x1000 (values are in 1000s euros)
-med_income <- as.numeric(str_repalce(med_std_income_k, ", ", "."))*1000
+med_income <- as.numeric(str_replace(med_std_income_k, ",", "."))*1000
 
-# Merge on province + year (inner join -> the 2013-2014 overlap) and build the 
+# Merge on province + year (inner join -> the 2013-2024 overlap) and build the 
 # two analysis variables; distinct() collapses the duplicate 2018 income file. 
 panel <- prices %>% 
   inner_join(income, by = c("province", "year")) %>%
