@@ -367,7 +367,7 @@ The data and sources used in this report:
   region] [Data set]. CBS StatLine. https://opendata.cbs.nl/
 - Centraal Planbureau (CPB). (2026). *Monitor toegankelijkheid woningmarkt*
   [Housing Market Accessibility Monitor]. CPB Netherlands Bureau for Economic
-  Policy Analysis. https://www.cpb.nl/
+  Policy Analysis. https://www.cpb.nl/publicatie/toegankelijkheidsmonitor-koopwoningmarkt
 - De Nederlandsche Bank (DNB). (2024). *Housing market.* https://www.dnb.nl/en/current-economic-issues/housing-market/
 - Cartomap. (2023). *provincie_2023* [Province boundary GeoJSON, CBS/PDOK source].
   https://cartomap.github.io/nl/
