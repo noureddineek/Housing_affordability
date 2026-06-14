@@ -4,15 +4,26 @@
 # Usage:  source("run_all.R")  from the project root (open the .Rproj first).
 #
 # Steps:
-#   1. (optional) restore exact package versions with renv
+#   1a. (optional) restore exact package versions with renv
+#   1b. install TinyTeX if no LateX engine is present (needed for the PDF output) 
 #   2. clean + merge the raw CBS data        -> data/panel.csv
 #   3. build the choropleth map               -> output/affordability_map_2024.png
 #   4. knit the full report                    -> housing_affordability.pdf
 # ============================================================================
 
-# 1. Restore pinned package versions if renv is set up (safe to skip if not).
+# 1a. Restore pinned package versions if renv is set up (safe to skip if not).
 if (file.exists("renv.lock") && requireNamespace("renv", quietly = TRUE)) {
   renv::restore(prompt = FALSE)
+}
+
+# 1b. Make sure a LaTeX engine exists, since the report knits to a PDF.
+# Installs the lightweight TinyTeX distribution only if none is found.
+if (!requireNamespace("tinytex", quietly = TRUE)) {
+  install.packages("tinytex")
+}
+if (!tinytex::is_tinytex() && !nzchar(Sys.which("pdflatex"))) {
+  message("No LaTeX found - installing TinyTeX (this can take a few minutes)...")
+  tinytex::install_tinytex()
 }
 
 # 2. Clean + merge.
