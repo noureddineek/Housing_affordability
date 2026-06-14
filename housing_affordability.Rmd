@@ -58,7 +58,7 @@ We merge **two distinct public CBS datasets**, joined on province x year:
 | Existing own homes; average purchase prices | province x year | `avg_price` (EUR) | CBS / Kadaster, 2013-2025 |
 | Income of persons; characteristics, region | province x year | median standardised household income (EUR) | CBS, 2013-2024 |
 
-**Limitations (state honestly - rubric rewards this):**
+**Limitations:**
 
 - The two series do not fully overlap: prices run to **2025**, income only to
   **2024**, and the 2024 income figure is **provisional** (CBS flags it `*`).
@@ -137,7 +137,7 @@ tibble::tribble(
 
 ## Creating new variables
 
-Two constructed variables (rubric: >= 2 variables with analytical value):
+Two constructed variables:
 
 - **`price_income_ratio`** = average price / median income. Interprets directly
   as the number of years of median income needed to buy an average home - the
